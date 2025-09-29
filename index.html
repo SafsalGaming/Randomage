@@ -151,6 +151,7 @@
     const imgEl   = document.getElementById("mainImg");
     const qEl     = document.getElementById("queryText");
     const inputEl = document.getElementById("customInput");
+const UNSPLASH_ACCESS_KEY = "OyP5c6t6jgtb7wrPLYjgX1umRAz8rAY5kuww7muP7x0"; // לא את ה-Secret!
 
     let history = []; let index = -1;
     let showQuery = false;
@@ -228,6 +229,68 @@
         .map(s => s.toLowerCase())
         .filter(s => !BAD_WORDS.has(s));
     }
+async function fetchUnsplashByQuery(query, token, attempts=2) {
+  const url = new URL("https://api.unsplash.com/photos/random");
+  url.searchParams.set("query", query);
+  url.searchParams.set("count", "1");
+  url.searchParams.set("content_filter", "high");     // פחות זבל
+  url.searchParams.set("orientation", "landscape");   // תאום למסך, תשנה אם בא לך
+
+  try {
+    const res = await withTimeout(fetch(url.toString(), {
+      headers: { Authorization: `Client-ID ${UNSPLASH_ACCESS_KEY}` }
+    }), 10000, "unsplash-query");
+
+    if (token !== fetchToken) return null;
+
+    if (!res.ok) throw new Error(`Unsplash ${res.status}`);
+    const data = await res.json();
+    const item = Array.isArray(data) ? data[0] : data;
+
+    // עדיף regular ל־UI, raw/ full כבד מדי
+    const imgUrl = item?.urls?.regular || item?.urls?.full || item?.urls?.raw;
+    if (!imgUrl) return null;
+
+    // אופציונלי: לוג ל־download_location כדי לשמור על ה־guidelines של Unsplash
+    try {
+      const dl = item?.links?.download_location;
+      if (dl) fetch(dl, { headers: { Authorization: `Client-ID ${UNSPLASH_ACCESS_KEY}` }});
+    } catch {}
+
+    return imgUrl;
+  } catch (e) {
+    if (attempts > 0) return fetchUnsplashByQuery(query, token, attempts-1);
+    return null;
+  }
+}
+
+async function fetchUnsplashRandom(token, attempts=2) {
+  const url = "https://api.unsplash.com/photos/random?count=1&content_filter=high";
+  try {
+    const res = await withTimeout(fetch(url, {
+      headers: { Authorization: `Client-ID ${UNSPLASH_ACCESS_KEY}` }
+    }), 10000, "unsplash-random");
+
+    if (token !== fetchToken) return null;
+
+    if (!res.ok) throw new Error(`Unsplash ${res.status}`);
+    const data = await res.json();
+    const item = Array.isArray(data) ? data[0] : data;
+
+    const imgUrl = item?.urls?.regular || item?.urls?.full || item?.urls?.raw;
+    if (!imgUrl) return null;
+
+    try {
+      const dl = item?.links?.download_location;
+      if (dl) fetch(dl, { headers: { Authorization: `Client-ID ${UNSPLASH_ACCESS_KEY}` }});
+    } catch {}
+
+    return imgUrl;
+  } catch (e) {
+    if (attempts > 0) return fetchUnsplashRandom(token, attempts-1);
+    return null;
+  }
+}
 
     // FIX: רג׳קסים תקינים (ללא backslashes כפולים)
     function extractValidWordsHE(t){
@@ -421,13 +484,13 @@ async function fetchAndAppendNewImage(){
   if (isFetching){ dlog("Skip: already fetching"); return; }
   isFetching = true; const myToken = ++fetchToken;
   try{
-    const query = await buildQueryByMode(); dlog("Query:", query);
+    const query = await buildQueryByMode();
+    dlog("Query:", query);
 
-    // קודם מנסים לפי הטקסט שנבנה, אם אין - נופלים לרנדומלי אמיתי
-    let imgUrl = await fetchCommonsImageByQuery(query, myToken);
-    if (!imgUrl) imgUrl = await fetchCommonsRandomImage(myToken);
+    let imgUrl = await fetchUnsplashByQuery(query, myToken);
+    if (!imgUrl) imgUrl = await fetchUnsplashRandom(myToken);
 
-    if (myToken !== fetchToken){ dlog("Result superseded"); return; }
+    if (myToken !== fetchToken) return;
     if (imgUrl){
       if (index < history.length-1) history.length = index + 1;
       history.push({ url: imgUrl, query }); index = history.length - 1;
@@ -438,7 +501,7 @@ async function fetchAndAppendNewImage(){
       fetchAndAppendNewImage();
     }
   } catch(e){
-    dlog("Fatal fetchAndAppend:", e && e.message || e);
+    dlog("Fatal fetchAndAppend:", e?.message || e);
   } finally {
     isFetching = false;
   }
@@ -533,3 +596,4 @@ async function fetchAndAppendNewImage(){
   </script>
 </body>
 </html>
+
