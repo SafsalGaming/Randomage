@@ -270,47 +270,6 @@ const UNSPLASH_ACCESS_KEY = "OyP5c6t6jgtb7wrPLYjgX1umRAz8rAY5kuww7muP7x0"; // ל
 // גודל יעד חכם לפי המסך + קצת רנדומליות
 // גודל יעד חכם לפי המסך + קצת רנדומליות
 // גודל יעד חכם ורנדומלי באמת + לוג
-function pickRandomSize() {
-  const vw = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);
-  const vh = Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0);
-
-  // בוחרים יחס צדדי יעד:
-  // 60% מהמקרים דומה ליחס המסך, 40% קצת שונה כדי לגוון (לכיוון רחב/גבוה)
-  const screenRatio = vw / vh;
-  const r = Math.random();
-  const targetRatio = (r < 0.6)
-    ? screenRatio
-    : screenRatio * (0.65 + Math.random() * 0.9); // ~0.65x עד ~1.55x
-
-  // לפעמים עובדים מרוחב המסך, לפעמים מהגובה – כדי לשבור תבניות
-  const baseFromWidth = Math.random() < 0.55;
-
-  // סקייל בסיסי: 45%–85% מהמידה הבסיסית (אח"כ נכפיל ב-DPR)
-  const scale = 0.45 + Math.random() * 0.40;
-
-  let baseW, baseH;
-  if (baseFromWidth) {
-    baseW = Math.max(500, Math.round(vw * scale));
-    baseH = Math.max(350, Math.round(baseW / targetRatio));
-  } else {
-    baseH = Math.max(350, Math.round(vh * scale));
-    baseW = Math.max(500, Math.round(baseH * targetRatio));
-  }
-
-  // DPI: לא להגזים – מספיק חד. תקרה 2560 כדי לא לצלות רשת.
-  const dpr = Math.min(Math.max(window.devicePixelRatio || 1, 1), 2);
-  let w = Math.min(Math.round(baseW * dpr), 2560);
-  let h = Math.min(Math.round(baseH * dpr), 2560);
-
-  // ביטוח תחתון
-  w = Math.max(w, 500);
-  h = Math.max(h, 350);
-
-  // לוג נוח לדיבאג
-  dlog(`[PICSUM] picked size: ${w}x${h} (base ${baseW}x${baseH}, dpr ${dpr.toFixed(2)}, ratio≈${(w/h).toFixed(3)})`);
-
-  return { w, h };
-}
 
 
 // מחזיר URL רנדומלי מפיקסום עם שינוי גודל
@@ -699,6 +658,7 @@ async function fetchAndAppendNewImage(){
   </script>
 </body>
 </html>
+
 
 
 
