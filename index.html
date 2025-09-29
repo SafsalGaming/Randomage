@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="he">
+<head>
+  <meta charset="UTF-8" />
+<link rel="icon" type="image/png" href="https://i.ibb.co/XfC4BDXk/Screenshot-3.png">
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Random Image</title>
+  <style>
+    :root { --fade-ms: 500ms; --ui-h: 0vh; }
+    html, body { height: 100%; overflow: hidden; }
+    body{
+      margin:0; background:#000; color:#fff; font-family: Arial, sans-serif;
+      display:flex; flex-direction:column; align-items:center; justify-content:flex-start;
+    }
+
+    /* אזור עליון – עוגן לשכבות העל */
+    #topWrap{
+      position: relative;
+      height: calc(100vh - var(--ui-h));
+      width:100%;
+      display:flex; flex-direction:column; align-items:center; justify-content:flex-start;
+      box-sizing:border-box; padding-top:6px;
+    }
+
+    /* טקסט השאילתה – שכבת-על, לא מזיזה את התמונה */
+    #queryText{
+      position:absolute;
+      top:1vh;
+      left:50%;
+      transform:translateX(-50%);
+      width:auto;
+      max-width:94vw;
+      padding:0 12px;
+      pointer-events:none; z-index:2;
+      font-size:18px; line-height:1.2;
+      display:none; opacity:0; transition:opacity var(--fade-ms) ease-in-out;
+      text-align:center; word-break:break-word; direction:rtl;
+      text-shadow:0 1px 2px rgba(0,0,0,.6);
+    }
+    #queryText.visible{ opacity:1; }
+
+    /* אינפוט הקלט – באותו מקום בדיוק */
+    #customInput{
+      position:absolute;
+      top:1vh;
+      left:50%;
+      transform:translateX(-50%);
+      width:min(720px, 94vw); max-width:94vw; box-sizing:border-box;
+      padding:10px 12px;
+      border-radius:10px; border:1px solid rgba(255,255,255,.25);
+      background:rgba(0,0,0,.45); color:#fff;
+      font-size:18px; line-height:1.2;
+      outline:none; z-index:4;
+      display:none;
+    }
+    #customInput.show{ display:block; }
+
+    #imageWrap{
+      flex:1 1 auto; width:100%;
+      display:flex; align-items:center; justify-content:center;
+    }
+    #mainImg{
+      max-width:95vw; max-height:100%;
+      border-radius:8px;
+      opacity:0;
+      transition: opacity var(--fade-ms) ease-in-out;
+      will-change: opacity;
+      user-select:none; pointer-events:none; background:transparent;
+      display:block;
+    }
+    #mainImg.visible{ opacity:1; }
+    @media (min-width: 901px) and (pointer: fine){
+      #mainImg{ max-width:90vw; max-height:90vh; }
+    }
+
+    /* UI תחתון למובייל בלבד */
+    .controls{ display:none; position:fixed; left:0; right:0; bottom:0; height:30vh; }
+    .controls-inner{
+      height:100%; width:100%; max-width:560px; margin:0 auto;
+      display:flex; flex-direction:column; justify-content:center; gap:10px;
+      padding:10px 12px; box-sizing:border-box;
+      background: rgba(255,255,255,0.06);
+      border-top: 1px solid rgba(255,255,255,0.12);
+      backdrop-filter: blur(10px);
+    }
+    @media (max-width: 900px), (pointer: coarse){
+      :root{ --ui-h: 30vh; }
+      .controls{ display:block; }
+    }
+    .row{ display:flex; gap:10px; justify-content:center; width:100%; }
+    .row.nav button{ flex:1; min-width:140px; }
+    .row.modes button{ flex:1; min-width:90px; }
+    .row .full{ flex:1; }
+    .controls button{
+      appearance:none; cursor:pointer; border:1px solid rgba(255,255,255,0.18);
+      background:rgba(255,255,255,0.08); color:#fff; padding:10px 12px; border-radius:10px;
+      font-size:14px; line-height:1; transition: transform 120ms ease, background 120ms, border-color 120ms;
+    }
+    .controls button:active{ transform:scale(0.98); }
+    .controls button.active{ background:rgba(255,255,255,0.18); border-color:rgba(255,255,255,0.35); }
+
+    /* DEBUG overlay (מוסתר כברירת־מחדל, נפתח ב-L) */
+    #debug{
+      position:fixed; left:8px; bottom:8px; width:min(46ch, 90vw);
+      max-height:40vh; overflow:auto; font:12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+      background:rgba(0,0,0,0.55); color:#0f0; border:1px solid rgba(0,255,0,0.25);
+      padding:6px 8px; border-radius:8px; z-index:3; white-space:pre-wrap;
+    }
+    #debug.hidden{ display:none; }
+  </style>
+</head>
+<body>
+  <div id="topWrap">
+    <div id="queryText"></div>
+    <input id="customInput" type="text" placeholder="הקלד/י ביטוי… (Enter לאישור, Esc לביטול)" />
+    <div id="imageWrap">
+      <img id="mainImg" alt="">
+    </div>
+  </div>
+
+  <div class="controls" id="controls">
+    <div class="controls-inner">
+      <div class="row nav">
+        <button id="btnPrev">◀</button>
+        <button id="btnNext">▶</button>
+      </div>
+      <div class="row modes">
+        <button id="btnNumber" class="active">Num</button>
+        <button id="btnWord">Word</button>
+      </div>
+      <div class="row">
+        <button id="btnToggleSearch" class="full">Show search</button>
+      </div>
+    </div>
+  </div>
+
+  <pre id="debug" class="hidden"></pre>
+
+  <script>
+
+    /* ===== DEBUG (hidden by default; toggle 'L') ===== */
+    const dbg = document.getElementById('debug');
+    let debugVisible = false;
+    const updateDebugVis = () => dbg.classList.toggle('hidden', !debugVisible);
+    const dlog = (...a) => { dbg.textContent += a.join(' ') + "\n"; dbg.scrollTop = dbg.scrollHeight; };
+    window.onerror = (m, s, l, c) => dlog("window.onerror:", m, "@", s+":"+l+":"+c);
+    window.onunhandledrejection = (e) => dlog("unhandledrejection:", (e?.reason?.stack || e?.reason?.message) || e);
+    dlog("Boot…");
+
+    /* ===== STATE ===== */
+    const imgEl   = document.getElementById("mainImg");
+    const qEl     = document.getElementById("queryText");
+    const inputEl = document.getElementById("customInput");
+
+    let history = []; let index = -1;
+    let showQuery = false;
+    let fetchToken = 0, viewToken = 0, isFetching = false;
+
+    const MODE = { NUMBER: "number", WORD: "word", CUSTOM: "custom" };
+    let currentMode = MODE.NUMBER;
+
+    const WORD_LANG = { EN: "en", HE: "he" };
+    let wordLang = WORD_LANG.EN;   // עבור WORD בלבד
+
+    // CUSTOM (מצב קלט)
+    let customPhrase = "";          // הביטוי שהמשתמש כתב
+    let customLang   = WORD_LANG.EN; // שפת הביטוי (נקבעת אוטומטית בזמן Enter)
+
+    /* ===== CONTROLS ===== */
+    const btnWord   = document.getElementById("btnWord");
+    const btnNumber = document.getElementById("btnNumber");
+    const btnToggle = document.getElementById("btnToggleSearch");
+    const btnPrev   = document.getElementById("btnPrev");
+    const btnNext   = document.getElementById("btnNext");
+
+    function updateControlsUI(){
+      btnWord.classList.toggle("active",   currentMode === MODE.WORD);
+      btnNumber.classList.toggle("active", currentMode === MODE.NUMBER);
+      btnToggle.classList.toggle("active", showQuery);
+      btnToggle.textContent = showQuery ? "Hide search" : "Show search";
+    }
+    const isTouch = window.matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
+    if (isTouch) document.getElementById('controls').style.display = 'block';
+
+    btnWord?.addEventListener("click", () => setMode(MODE.WORD));
+    btnNumber?.addEventListener("click", () => setMode(MODE.NUMBER));
+    btnToggle?.addEventListener("click", () => { showQuery = !showQuery; refreshQueryText(); updateControlsUI(); });
+    btnPrev?.addEventListener("click", () => navigate(-1));
+    btnNext?.addEventListener("click", () => navigate(+1));
+
+    function setMode(m){
+      if (currentMode !== m){
+        currentMode = m;
+        updateControlsUI();
+        fetchAndAppendNewImage();
+      }
+    }
+
+    /* ===== STOP WORDS ===== */
+    const BAD_WORDS = new Set([
+      // EN
+      "a","an","the","and","or","but","so","yet","nor","of","in","on","at","to","from","for",
+      "with","without","about","into","onto","over","under","above","below","between","among",
+      "around","through","across","against","after","before","during","while","until","till",
+      "since","as","up","down","out","off","near","by","along","via","per","is","are","was",
+      "were","be","been","being","do","does","did","done","can","could","shall","should","will",
+      "would","may","might","must",
+      // HE
+      "של","עם","על","אל","אליו","אליה","אליהם","אליהן","אם","כי","אבל","או","וגם","גם","לא",
+      "כן","כמו","כאילו","ב","ל","כ","מ","ש","את","זה","זו","הם","הן","הוא","היא","ה","אולי",
+      "כאשר","מאז","בגלל","לכן","לפני","אחרי","עד","בעת","תוך"
+    ]);
+
+    /* ===== HELPERS ===== */
+    const randInt = (n) => Math.floor(Math.random()*n);
+    const randomNumber = () => Math.floor(Math.random()*100000);
+
+    // FIX: רג׳קס נכון לזיהוי עברית
+    const hasHebrew = (s) => /[\u0590-\u05FF]/.test(s);
+
+    function extractValidWordsEN(t) {
+      return (t || "")
+        .split(/[\s\-_–—,.;:!?'"“”‘’()[\]{}\/]+/)
+        .filter(Boolean)
+        .map(s => s.trim())
+        .filter(s => /^[A-Za-z]+$/.test(s))
+        .filter(s => s.length >= 3)
+        .map(s => s.toLowerCase())
+        .filter(s => !BAD_WORDS.has(s));
+    }
+
+    // FIX: רג׳קסים תקינים (ללא backslashes כפולים)
+    function extractValidWordsHE(t){
+      return (t || "")
+        .split(/[\s\-_–—,.;:!?'"“”‘’()[\]{}\/]+/)
+        .filter(Boolean)
+        .map(s=>s.trim())
+        .filter(s=>/^[\u0590-\u05FF]+$/.test(s))
+        .filter(s=>s.length>=2)
+        .filter(s=>!BAD_WORDS.has(s));
+    }
+
+    async function getRandomWikiWordEN(){
+      for (let i=0;i<12;i++){
+        const r = await fetch("https://en.wikipedia.org/w/api.php?action=query&list=random&rnnamespace=0&rnlimit=1&format=json&origin=*");
+        const d = await r.json(); const bag = extractValidWordsEN(d?.query?.random?.[0]?.title);
+        if (bag.length) return bag[randInt(bag.length)];
+      } return "random";
+    }
+    async function getRandomWikiWordHE(){
+      for (let i=0;i<12;i++){
+        const r = await fetch("https://he.wikipedia.org/w/api.php?action=query&list=random&rnnamespace=0&rnlimit=1&format=json&origin=*");
+        const d = await r.json(); const bag = extractValidWordsHE(d?.query?.random?.[0]?.title);
+        if (bag.length) return bag[randInt(bag.length)];
+      } return "אקראי";
+    }
+    async function getTwoIndependentEN(){ let a=await getRandomWikiWordEN(), b=await getRandomWikiWordEN(); for(let i=0;i<8&&a===b;i++) b=await getRandomWikiWordEN(); return [a,b]; }
+    async function getTwoIndependentHE(){ let a=await getRandomWikiWordHE(), b=await getRandomWikiWordHE(); for(let i=0;i<8&&a===b;i++) b=await getRandomWikiWordHE(); return [a,b]; }
+
+    function chooseImage(items){
+      if (!Array.isArray(items) || !items.length) return null;
+      const shuffled = items.slice().sort(()=>Math.random()-0.5);
+      const okExt = /\.(jpg|jpeg|png|gif|webp)$/i;
+      const badHint = /(sprite|logo|icon|thumbnail|favicon)/i;
+      const strong = shuffled.filter(it =>
+        (it?.mime?.startsWith("image/") || okExt.test(it?.link||"")) &&
+        it?.image && it.image.width>=300 && it.image.height>=300 &&
+        !badHint.test(it?.link || "") && /^https:\/\//i.test(it?.link || "")
+      );
+      if (strong.length) return strong[0].link;
+
+      const anyImg = shuffled.filter(it =>
+        (it?.mime?.startsWith("image/") || okExt.test(it?.link || "")) &&
+        !badHint.test(it?.link || "") &&
+        /^https:\/\//i.test(it?.link || "")
+      );
+
+      return anyImg[0]?.link || null;
+    }
+
+    function refreshQueryText(){
+      const cur = history[index];
+      if (showQuery && cur?.query){
+        qEl.textContent = cur.query; qEl.style.display="block";
+        requestAnimationFrame(()=> qEl.classList.add("visible"));
+      } else {
+        qEl.classList.remove("visible");
+        setTimeout(()=>{ if(!showQuery) qEl.style.display="none"; }, 520);
+      }
+    }
+
+    function transitionTo(url, query, {fromHistory=false, dir=0} = {}){
+      const myView = ++viewToken;
+      const doSwap = () => {
+        const pre = new Image(); pre.decoding="async";
+        pre.onload = () => {
+          if (myView !== viewToken) return;
+          imgEl.src = pre.src;
+          requestAnimationFrame(()=>requestAnimationFrame(()=>{
+            if (myView !== viewToken) return;
+            imgEl.classList.add("visible"); refreshQueryText();
+          }));
+        };
+        pre.onerror = () => {
+          const cur = history[index]; if (cur) cur.broken = true;
+          dlog("IMG load failed. fromHistory:", fromHistory, "dir:", dir);
+          if (fromHistory) navigate(dir||+1); else { isFetching=false; fetchAndAppendNewImage(); }
+        };
+        pre.src = url;
+      };
+      if (!imgEl.getAttribute('src')){ if (query!==undefined) qEl.textContent=query||""; doSwap(); return; }
+      imgEl.classList.remove("visible");
+      const onEnd = () => { imgEl.removeEventListener("transitionend", onEnd);
+        if (myView !== viewToken) return; if (query!==undefined) qEl.textContent=query||""; doSwap(); };
+      imgEl.addEventListener("transitionend", onEnd, { once:true });
+      setTimeout(()=>{ if (myView===viewToken) onEnd(); }, 520);
+    }
+
+    function navigate(delta){
+      if (!history.length) return;
+      const step = delta>0?1:-1; let target = index + step;
+      if (target < 0) target = 0;
+      if (target > history.length-1){ if (step>0) fetchAndAppendNewImage(); return; }
+      let i = target; while (i>=0 && i<history.length && history[i]?.broken) i += step;
+      if (i<0 || i>=history.length){ if (step>0) fetchAndAppendNewImage(); return; }
+      index = i; const {url,query} = history[index]; dlog("Navigate to #", index, "query:", query);
+      transitionTo(url, query, { fromHistory:true, dir:step });
+    }
+
+    function withTimeout(promise, ms, label){
+      let t; return Promise.race([ promise,
+        new Promise((_,rej)=> t=setTimeout(()=>rej(new Error(`Timeout ${label||''} ${ms}ms`)), ms))
+      ]).finally(()=>clearTimeout(t));
+    }
+
+/* ===== NO CONFIG NEEDED (Wikimedia Commons) ===== */
+
+/* ... שאר העוזרים שלך נשארים ... */
+
+/* חיפוש תמונה לפי טקסט ב־Wikimedia Commons */
+async function fetchCommonsImageByQuery(query, token, attempts=2) {
+  const offset = Math.floor(Math.random()*10); // כדי לגוון תוצאות
+  const params = new URLSearchParams({
+    action: 'query',
+    format: 'json',
+    origin: '*',
+    generator: 'search',
+    gsrsearch: query,
+    gsrnamespace: '6',     // קבצי מדיה
+    gsrlimit: '40',
+    gsroffset: String(offset),
+    prop: 'imageinfo',
+    iiprop: 'url|mime',
+    iiurlwidth: '2000'     // נקבל thumburl מוכן עד 2000px
+  });
+  const url = 'https://commons.wikimedia.org/w/api.php?' + params.toString();
+
+  try {
+    dlog('Commons fetch:', query, '(offset', offset, ')');
+    const res = await withTimeout(fetch(url), 10000, 'commons');
+    if (token !== fetchToken) return null;
+    const data = await res.json();
+    const pages = data?.query?.pages;
+
+    let candidates = pages ? Object.values(pages)
+      .map(p => p?.imageinfo?.[0])
+      .filter(Boolean) : [];
+
+    // סינון קליל לפורמטים בעייתיים
+    candidates = candidates.filter(info =>
+      /^image\//.test(info.mime || '') ||
+      /\.(jpe?g|png|gif|webp)$/i.test(info.url || '')
+    );
+
+    if (!candidates.length) {
+      if (attempts > 0) return fetchCommonsImageByQuery(query, token, attempts-1);
+      return null;
+    }
+
+    const pick = candidates[Math.floor(Math.random()*candidates.length)];
+    return pick.thumburl || pick.url || null;
+  } catch (e) {
+    dlog('Commons fetch err:', e && (e.message || e));
+    if (attempts > 0) return fetchCommonsImageByQuery(query, token, attempts-1);
+    return null;
+  }
+}
+
+/* במקרה שאין תוצאות לשאילתה - קח קובץ רנדומלי לגמרי */
+async function fetchCommonsRandomImage(token, attempts=2) {
+  const params = new URLSearchParams({
+    action: 'query',
+    format: 'json',
+    origin: '*',
+    generator: 'random',
+    grnnamespace: '6',
+    grnlimit: '1',
+    prop: 'imageinfo',
+    iiprop: 'url|mime',
+    iiurlwidth: '2000'
+  });
+  const url = 'https://commons.wikimedia.org/w/api.php?' + params.toString();
+
+  try {
+    dlog('Commons random…');
+    const res = await withTimeout(fetch(url), 10000, 'commons-random');
+    if (token !== fetchToken) return null;
+    const data = await res.json();
+    const page = data?.query?.pages ? Object.values(data.query.pages)[0] : null;
+    const info = page?.imageinfo?.[0];
+    return info?.thumburl || info?.url || null;
+  } catch (e) {
+    dlog('Commons random err:', e && (e.message || e));
+    if (attempts > 0) return fetchCommonsRandomImage(token, attempts-1);
+    return null;
+  }
+}
+
+/* מחליף את Google ב־Commons */
+async function fetchAndAppendNewImage(){
+  if (isFetching){ dlog("Skip: already fetching"); return; }
+  isFetching = true; const myToken = ++fetchToken;
+  try{
+    const query = await buildQueryByMode(); dlog("Query:", query);
+
+    // קודם מנסים לפי הטקסט שנבנה, אם אין - נופלים לרנדומלי אמיתי
+    let imgUrl = await fetchCommonsImageByQuery(query, myToken);
+    if (!imgUrl) imgUrl = await fetchCommonsRandomImage(myToken);
+
+    if (myToken !== fetchToken){ dlog("Result superseded"); return; }
+    if (imgUrl){
+      if (index < history.length-1) history.length = index + 1;
+      history.push({ url: imgUrl, query }); index = history.length - 1;
+      transitionTo(imgUrl, query, { fromHistory:false });
+    } else {
+      dlog("No results. Retrying…");
+      isFetching = false;
+      fetchAndAppendNewImage();
+    }
+  } catch(e){
+    dlog("Fatal fetchAndAppend:", e && e.message || e);
+  } finally {
+    isFetching = false;
+  }
+}
+
+
+    async function buildQueryByMode(){
+  if (currentMode === MODE.WORD){
+        if (wordLang === WORD_LANG.HE){ const [a,b]=await getTwoIndependentHE(); return `${a} ${b}`; }
+        else { const [a,b]=await getTwoIndependentEN(); return `${a} ${b}`; }
+      } else if (currentMode === MODE.CUSTOM){
+        // המילה הרנדומלית לפני הביטוי שהמשתמש כתב
+        const randW = customLang === WORD_LANG.HE ? await getRandomWikiWordHE()
+                                                 : await getRandomWikiWordEN();
+        return `${randW} ${customPhrase}`;
+      } else { // NUMBER
+        return String(randomNumber());
+      }
+    }
+
+    
+
+    /* ===== Input overlay (I to open) ===== */
+    function openCustomInput(){
+      inputEl.classList.add('show');
+      inputEl.value = customPhrase || "";
+      inputEl.placeholder = "הקלד/י ביטוי… (Enter לאישור, Esc לביטול)";
+      inputEl.focus();
+      qEl.classList.remove('visible');
+    }
+    function closeCustomInput(){
+      inputEl.classList.remove('show');
+      inputEl.blur(); // שחרור פוקוס מהאינפוט
+      if (!document.body.hasAttribute('tabindex')) document.body.setAttribute('tabindex', '-1');
+      document.body.focus?.();
+    }
+
+    inputEl.addEventListener('keydown', async (ev)=>{
+      if (ev.key === 'Escape'){
+        ev.preventDefault(); ev.stopPropagation();
+        closeCustomInput();
+      } else if (ev.key === 'Enter'){
+        ev.preventDefault(); ev.stopPropagation();
+        const phrase = (inputEl.value || "").trim();
+
+        // סגור מיד כדי לשחרר פוקוס ולתת לחצים לעבוד
+        closeCustomInput();
+
+        if (!phrase) return;
+        customPhrase = phrase;
+        customLang = hasHebrew(phrase) ? WORD_LANG.HE : WORD_LANG.EN;
+
+        // אם עוברים למצב CUSTOM – זה יזניק חיפוש.
+        // אם כבר היינו ב־CUSTOM – נזניק חיפוש ידנית.
+        if (currentMode !== MODE.CUSTOM) {
+          setMode(MODE.CUSTOM);
+        } else {
+          fetchAndAppendNewImage();
+        }
+      }
+      // לא עוצרים מקשים אחרים – כדי לאפשר הקלדה רגילה
+    });
+
+    /* ===== Keyboard ===== */
+    document.addEventListener("keydown", (ev)=>{
+      if (ev.repeat) return;
+
+      // כשה־Input פתוח – לא מפעילים קיצורי דרך
+      if (inputEl.classList.contains('show')) return;
+
+      const k = ev.key?.toLowerCase?.();
+      if (k === " "){ ev.preventDefault(); fetchAndAppendNewImage(); }
+      else if (k === "arrowleft"){ navigate(-1); }
+      else if (k === "arrowright"){ navigate(+1); }
+      else if (k === "g"){ showQuery = !showQuery; refreshQueryText(); updateControlsUI(); }
+      else if (k === "w"){ setMode(MODE.WORD); }
+      else if (k === "n"){ setMode(MODE.NUMBER); }
+      else if (k === "e"){ if (currentMode === MODE.WORD){ wordLang = WORD_LANG.EN; fetchAndAppendNewImage(); } }
+      else if (k === "h"){ if (currentMode === MODE.WORD){ wordLang = WORD_LANG.HE; fetchAndAppendNewImage(); } }
+      else if (k === "l"){ debugVisible = !debugVisible; updateDebugVis(); }
+      else if (k === "i"){
+        ev.preventDefault();
+        ev.stopPropagation();
+        openCustomInput();
+      }
+    });
+
+    /* ===== init ===== */
+    updateControlsUI();
+    updateDebugVis();  // מתחיל מוסתר
+    fetchAndAppendNewImage();
+  </script>
+</body>
+</html>
