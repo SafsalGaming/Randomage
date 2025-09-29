@@ -515,10 +515,8 @@ async function fetchAndAppendNewImage(){
   if (isFetching){ dlog("Skip: already fetching"); return; }
   isFetching = true; const myToken = ++fetchToken;
   try{
-    // לא באמת צריך query, אבל נשאיר תאימות ל־UI שלך
-    const builtQuery = await buildQueryByMode();
+    const builtQuery = await buildQueryByMode(); // רק לטקסט העליון
 
-    // מביאים URL מפיקסום
     const got = await fetchPicsumRandom(myToken);
     if (myToken !== fetchToken) return;
 
@@ -631,6 +629,7 @@ async function fetchAndAppendNewImage(){
   </script>
 </body>
 </html>
+
 
 
 
