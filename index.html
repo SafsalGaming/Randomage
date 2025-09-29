@@ -138,526 +138,197 @@
 
   <script>
 
-    /* ===== DEBUG (hidden by default; toggle 'L') ===== */
-    const dbg = document.getElementById('debug');
-    let debugVisible = false;
-    const updateDebugVis = () => dbg.classList.toggle('hidden', !debugVisible);
-    const dlog = (...a) => { dbg.textContent += a.join(' ') + "\n"; dbg.scrollTop = dbg.scrollHeight; };
-    window.onerror = (m, s, l, c) => dlog("window.onerror:", m, "@", s+":"+l+":"+c);
-    window.onunhandledrejection = (e) => dlog("unhandledrejection:", (e?.reason?.stack || e?.reason?.message) || e);
-    dlog("Boot…");
-// ---- הגדרות טווחים קשיחים (שנה למה שבא לך) ----
+/* ===== Random Image (Picsum) + History + Logs — minimal ===== */
+
+// ----- Debug overlay -----
+const dbg = document.getElementById("debug");
+let debugVisible = !!dbg && !dbg.classList.contains("hidden");
+const updateDebugVis = () => { if (dbg) dbg.classList.toggle("hidden", !debugVisible); };
+const dlog = (...a) => {
+  const line = a.join(" ");
+  if (dbg) { dbg.textContent += line + "\n"; dbg.scrollTop = dbg.scrollHeight; }
+  else console.log(line);
+};
+window.onerror = (m, s, l, c) => dlog("window.onerror:", m, "@", s+":"+l+":"+c);
+window.onunhandledrejection = (e) => dlog("unhandledrejection:", (e?.reason?.stack || e?.reason?.message) || e);
+dlog("Boot…");
+
+// ----- DOM -----
+const imgEl  = document.getElementById("mainImg");
+const btnPrev = document.getElementById("btnPrev");
+const btnNext = document.getElementById("btnNext");
+
+// ----- Config: fixed ranges (not tied to screen) -----
 const SIZE_CONF = {
-  MIN_W: 400,
-  MAX_W: 1000,
-  MIN_H: 400,
-  MAX_H: 1000,
-  DPR_MAX: 2,          // עד כמה להכפיל לפי DPR
-  ASPECT_MIN: 0.5,     // יחס צדדים מינימלי (רחב/גבוה מדי) 0.5 ~ "גבוה"
-  ASPECT_MAX: 2.0      // יחס צדדים מקסימלי 3.0 ~ "רחב"
+  MIN_W: 400,   // מינימום רוחב ל־request
+  MAX_W: 1600,  // מקסימום רוחב ל־request
+  MIN_H: 300,   // מינימום גובה ל־request
+  MAX_H: 1200,  // מקסימום גובה ל־request
+  DPR_MAX: 2,   // להכפיל לפי devicePixelRatio עד תקרה זו
+  // אם לא רוצים שום הגבלת יחס, שימו ASPECT_MIN=0, ASPECT_MAX=Infinity
+  ASPECT_MIN: 0.5,  // 0.5 ~ גבוה יחסית
+  ASPECT_MAX: 2.0   // 2.0 ~ רחב יחסית
 };
 
-function randIntRange(min, max) {
-  return Math.round(min + Math.random() * (max - min));
-}
+const randIntRange = (min, max) => Math.round(min + Math.random() * (max - min));
 
-// גודל רנדומלי אמיתי ללא תלות במסך
+// מייצר רוחב/גובה רנדומליים אמיתיים, ללא תלות במסך
 function pickRandomSize() {
   const { MIN_W, MAX_W, MIN_H, MAX_H, DPR_MAX, ASPECT_MIN, ASPECT_MAX } = SIZE_CONF;
 
-  // בסיס רנדומלי עצמאי לרוחב ולגובה
   const baseW = randIntRange(MIN_W, MAX_W);
   const baseH = randIntRange(MIN_H, MAX_H);
 
-  // DPR: חדות למסכים צפופים בלי להגזים
   const dpr = Math.min(window.devicePixelRatio || 1, DPR_MAX);
   let w = Math.round(baseW * dpr);
   let h = Math.round(baseH * dpr);
 
-  // תקרות אחרי DPR (שלא יעוף)
+  // תקרה אחרי DPR
   w = Math.min(w, Math.round(MAX_W * DPR_MAX));
   h = Math.min(h, Math.round(MAX_H * DPR_MAX));
 
-  // שמירה על יחס צדדים "הגיוני" (אופציונלי – תוכל לבטל אם לא רוצה הגבלות בכלל)
-  let aspect = w / h;
-  if (aspect < ASPECT_MIN) {
-    // גבוה מדי – נגדיל רוחב או נקטין גובה, נעדיף לשחק בגובה
-    h = Math.max(Math.round(w / ASPECT_MIN), MIN_H);
-  } else if (aspect > ASPECT_MAX) {
-    // רחב מדי – נגדיל גובה
-    h = Math.max(Math.round(w / ASPECT_MAX), MIN_H);
+  // שמירת יחס "הגיוני" (בטל ע"י 0/Infinity אם לא רוצים)
+  if (ASPECT_MIN > 0 || ASPECT_MAX < Infinity) {
+    let aspect = w / h;
+    if (aspect < ASPECT_MIN) {
+      h = Math.max(Math.round(w / ASPECT_MIN), MIN_H);
+    } else if (aspect > ASPECT_MAX) {
+      h = Math.max(Math.round(w / ASPECT_MAX), MIN_H);
+    }
   }
 
-  aspect = (w / h);
-
-  // לוגים ל-debug overlay שלך
-  dlog(`[SIZE] base=${baseW}x${baseH}, dpr=${dpr.toFixed(2)} -> final=${w}x${h}, aspect=${aspect.toFixed(3)}`);
-
+  const aspect = (w / h);
+  dlog(`[SIZE] base=${baseW}x${baseH}, dpr=${dpr.toFixed(2)} -> req=${w}x${h}, aspect=${aspect.toFixed(3)}`);
   return { w, h };
 }
 
-    /* ===== STATE ===== */
-    const imgEl   = document.getElementById("mainImg");
-    const qEl     = document.getElementById("queryText");
-    const inputEl = document.getElementById("customInput");
-const UNSPLASH_ACCESS_KEY = "OyP5c6t6jgtb7wrPLYjgX1umRAz8rAY5kuww7muP7x0"; // לא את ה-Secret!
-
-    let history = []; let index = -1;
-    let showQuery = false;
-    let fetchToken = 0, viewToken = 0, isFetching = false;
-
-    const MODE = { NUMBER: "number", WORD: "word", CUSTOM: "custom" };
-    let currentMode = MODE.NUMBER;
-
-    const WORD_LANG = { EN: "en", HE: "he" };
-    let wordLang = WORD_LANG.EN;   // עבור WORD בלבד
-
-    // CUSTOM (מצב קלט)
-    let customPhrase = "";          // הביטוי שהמשתמש כתב
-    let customLang   = WORD_LANG.EN; // שפת הביטוי (נקבעת אוטומטית בזמן Enter)
-
-    /* ===== CONTROLS ===== */
-    const btnWord   = document.getElementById("btnWord");
-    const btnNumber = document.getElementById("btnNumber");
-    const btnToggle = document.getElementById("btnToggleSearch");
-    const btnPrev   = document.getElementById("btnPrev");
-    const btnNext   = document.getElementById("btnNext");
-
-    function updateControlsUI(){
-      btnWord.classList.toggle("active",   currentMode === MODE.WORD);
-      btnNumber.classList.toggle("active", currentMode === MODE.NUMBER);
-      btnToggle.classList.toggle("active", showQuery);
-      btnToggle.textContent = showQuery ? "Hide search" : "Show search";
-    }
-    const isTouch = window.matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
-    if (isTouch) document.getElementById('controls').style.display = 'block';
-
-    btnWord?.addEventListener("click", () => setMode(MODE.WORD));
-    btnNumber?.addEventListener("click", () => setMode(MODE.NUMBER));
-    btnToggle?.addEventListener("click", () => { showQuery = !showQuery; refreshQueryText(); updateControlsUI(); });
-    btnPrev?.addEventListener("click", () => navigate(-1));
-    btnNext?.addEventListener("click", () => navigate(+1));
-
-    function setMode(m){
-      if (currentMode !== m){
-        currentMode = m;
-        updateControlsUI();
-        fetchAndAppendNewImage();
-      }
-    }
-
-    /* ===== STOP WORDS ===== */
-    const BAD_WORDS = new Set([
-      // EN
-      "a","an","the","and","or","but","so","yet","nor","of","in","on","at","to","from","for",
-      "with","without","about","into","onto","over","under","above","below","between","among",
-      "around","through","across","against","after","before","during","while","until","till",
-      "since","as","up","down","out","off","near","by","along","via","per","is","are","was",
-      "were","be","been","being","do","does","did","done","can","could","shall","should","will",
-      "would","may","might","must",
-      // HE
-      "של","עם","על","אל","אליו","אליה","אליהם","אליהן","אם","כי","אבל","או","וגם","גם","לא",
-      "כן","כמו","כאילו","ב","ל","כ","מ","ש","את","זה","זו","הם","הן","הוא","היא","ה","אולי",
-      "כאשר","מאז","בגלל","לכן","לפני","אחרי","עד","בעת","תוך"
-    ]);
-
-    /* ===== HELPERS ===== */
-    const randInt = (n) => Math.floor(Math.random()*n);
-    const randomNumber = () => Math.floor(Math.random()*100000);
-
-    // FIX: רג׳קס נכון לזיהוי עברית
-    const hasHebrew = (s) => /[\u0590-\u05FF]/.test(s);
-// גודל יעד חכם לפי המסך + קצת רנדומליות
-// גודל יעד חכם לפי המסך + קצת רנדומליות
-// גודל יעד חכם ורנדומלי באמת + לוג
-
-
-// מחזיר URL רנדומלי מפיקסום עם שינוי גודל
+// בונה URL ל-Picsum עם cache-bust
 function buildPicsumUrl() {
   const { w, h } = pickRandomSize();
   const cacheBust = Date.now() + "_" + Math.floor(Math.random() * 1e9);
   const url = `https://picsum.photos/${w}/${h}?r=${cacheBust}`;
   dlog(`[PICSUM] url: ${url}`);
-  return { url, query: `picsum ${w}×${h}` };
+  return { url, w, h };
 }
 
+// ----- State / history -----
+let history = [];    // [{url, w, h}]
+let index = -1;
+let isFetching = false;
+let fetchToken = 0;
+let viewToken  = 0;
 
-// "Fetcher" בסגנון הקוד הקיים
-async function fetchPicsumRandom(token) {
-  const { url, query } = buildPicsumUrl();
-  // אין צורך בפניה ל-JSON, פשוט מחזירים את ה-URL
-  return { url, query };
+// טעינה עם פרילוד וחילוף עדין (מבוסס מחלקת CSS "visible")
+function transitionTo(url, meta = {}) {
+  const myView = ++viewToken;
+
+  const pre = new Image();
+  pre.decoding = "async";
+
+  pre.onload = () => {
+    if (myView !== viewToken) return; // הוזן כבר משהו חדש בינתיים
+    imgEl.classList.remove("visible"); // התחלת fade-out
+    const swap = () => {
+      imgEl.removeEventListener("transitionend", swap);
+      if (myView !== viewToken) return;
+      imgEl.src = pre.src;
+
+      // לתת פריים אחד ל-layout ואז להדליק fade-in
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (myView !== viewToken) return;
+        imgEl.classList.add("visible");
+
+        // לוג של מידות טבעיות + תצוגה בפועל
+        const natural = `${pre.naturalWidth}x${pre.naturalHeight}`;
+        const shown   = `${imgEl.clientWidth}x${imgEl.clientHeight}`;
+        dlog(`[IMG] natural=${natural}, shown=${shown}`);
+      }));
+    };
+
+    // אם זו טעינה ראשונה ואין טרנזישן, נחליף מיד
+    if (!imgEl.getAttribute("src")) {
+      imgEl.src = pre.src;
+      requestAnimationFrame(() => imgEl.classList.add("visible"));
+      const natural = `${pre.naturalWidth}x${pre.naturalHeight}`;
+      const shown   = `${imgEl.clientWidth}x${imgEl.clientHeight}`;
+      dlog(`[IMG] (first) natural=${natural}, shown=${shown}`);
+    } else {
+      // חילוף אחרי מעבר
+      imgEl.addEventListener("transitionend", swap, { once: true });
+      // סתם ביטוח אם transitionend לא יורה
+      setTimeout(swap, 520);
+    }
+  };
+
+  pre.onerror = () => {
+    dlog("[IMG] preload error — trying next…");
+    // נסה ישר תמונה חדשה
+    isFetching = false;
+    fetchAndAppendNewImage();
+  };
+
+  pre.src = url;
 }
 
-async function fetchUnsplashByQuery(query, token, attempts=2) {
-  const url = new URL("https://api.unsplash.com/photos/random");
-  url.searchParams.set("query", query);
-  url.searchParams.set("count", "1");
-  url.searchParams.set("content_filter", "high");     // פחות זבל
-  url.searchParams.set("orientation", "landscape");   // תאום למסך, תשנה אם בא לך
-
-  try {
-    const res = await withTimeout(fetch(url.toString(), {
-      headers: { Authorization: `Client-ID ${UNSPLASH_ACCESS_KEY}` }
-    }), 10000, "unsplash-query");
-
-    if (token !== fetchToken) return null;
-
-    if (!res.ok) throw new Error(`Unsplash ${res.status}`);
-    const data = await res.json();
-    const item = Array.isArray(data) ? data[0] : data;
-
-    // עדיף regular ל־UI, raw/ full כבד מדי
-    const imgUrl = item?.urls?.regular || item?.urls?.full || item?.urls?.raw;
-    if (!imgUrl) return null;
-
-    // אופציונלי: לוג ל־download_location כדי לשמור על ה־guidelines של Unsplash
-    try {
-      const dl = item?.links?.download_location;
-      if (dl) fetch(dl, { headers: { Authorization: `Client-ID ${UNSPLASH_ACCESS_KEY}` }});
-    } catch {}
-
-    return imgUrl;
-  } catch (e) {
-    if (attempts > 0) return fetchUnsplashByQuery(query, token, attempts-1);
-    return null;
-  }
-}
-
-async function fetchUnsplashRandom(token, attempts=2) {
-  const url = "https://api.unsplash.com/photos/random?count=1&content_filter=high";
-  try {
-    const res = await withTimeout(fetch(url, {
-      headers: { Authorization: `Client-ID ${UNSPLASH_ACCESS_KEY}` }
-    }), 10000, "unsplash-random");
-
-    if (token !== fetchToken) return null;
-
-    if (!res.ok) throw new Error(`Unsplash ${res.status}`);
-    const data = await res.json();
-    const item = Array.isArray(data) ? data[0] : data;
-
-    const imgUrl = item?.urls?.regular || item?.urls?.full || item?.urls?.raw;
-    if (!imgUrl) return null;
-
-    try {
-      const dl = item?.links?.download_location;
-      if (dl) fetch(dl, { headers: { Authorization: `Client-ID ${UNSPLASH_ACCESS_KEY}` }});
-    } catch {}
-
-    return imgUrl;
-  } catch (e) {
-    if (attempts > 0) return fetchUnsplashRandom(token, attempts-1);
-    return null;
-  }
-}
-
-    // FIX: רג׳קסים תקינים (ללא backslashes כפולים)
-    function extractValidWordsHE(t){
-      return (t || "")
-        .split(/[\s\-_–—,.;:!?'"“”‘’()[\]{}\/]+/)
-        .filter(Boolean)
-        .map(s=>s.trim())
-        .filter(s=>/^[\u0590-\u05FF]+$/.test(s))
-        .filter(s=>s.length>=2)
-        .filter(s=>!BAD_WORDS.has(s));
-    }
-
-    async function getRandomWikiWordEN(){
-      for (let i=0;i<12;i++){
-        const r = await fetch("https://en.wikipedia.org/w/api.php?action=query&list=random&rnnamespace=0&rnlimit=1&format=json&origin=*");
-        const d = await r.json(); const bag = extractValidWordsEN(d?.query?.random?.[0]?.title);
-        if (bag.length) return bag[randInt(bag.length)];
-      } return "random";
-    }
-    async function getRandomWikiWordHE(){
-      for (let i=0;i<12;i++){
-        const r = await fetch("https://he.wikipedia.org/w/api.php?action=query&list=random&rnnamespace=0&rnlimit=1&format=json&origin=*");
-        const d = await r.json(); const bag = extractValidWordsHE(d?.query?.random?.[0]?.title);
-        if (bag.length) return bag[randInt(bag.length)];
-      } return "אקראי";
-    }
-    async function getTwoIndependentEN(){ let a=await getRandomWikiWordEN(), b=await getRandomWikiWordEN(); for(let i=0;i<8&&a===b;i++) b=await getRandomWikiWordEN(); return [a,b]; }
-    async function getTwoIndependentHE(){ let a=await getRandomWikiWordHE(), b=await getRandomWikiWordHE(); for(let i=0;i<8&&a===b;i++) b=await getRandomWikiWordHE(); return [a,b]; }
-
-    function chooseImage(items){
-      if (!Array.isArray(items) || !items.length) return null;
-      const shuffled = items.slice().sort(()=>Math.random()-0.5);
-      const okExt = /\.(jpg|jpeg|png|gif|webp)$/i;
-      const badHint = /(sprite|logo|icon|thumbnail|favicon)/i;
-      const strong = shuffled.filter(it =>
-        (it?.mime?.startsWith("image/") || okExt.test(it?.link||"")) &&
-        it?.image && it.image.width>=300 && it.image.height>=300 &&
-        !badHint.test(it?.link || "") && /^https:\/\//i.test(it?.link || "")
-      );
-      if (strong.length) return strong[0].link;
-
-      const anyImg = shuffled.filter(it =>
-        (it?.mime?.startsWith("image/") || okExt.test(it?.link || "")) &&
-        !badHint.test(it?.link || "") &&
-        /^https:\/\//i.test(it?.link || "")
-      );
-
-      return anyImg[0]?.link || null;
-    }
-
-    function refreshQueryText(){
-      const cur = history[index];
-      if (showQuery && cur?.query){
-        qEl.textContent = cur.query; qEl.style.display="block";
-        requestAnimationFrame(()=> qEl.classList.add("visible"));
-      } else {
-        qEl.classList.remove("visible");
-        setTimeout(()=>{ if(!showQuery) qEl.style.display="none"; }, 520);
-      }
-    }
-
-    function transitionTo(url, query, {fromHistory=false, dir=0} = {}){
-      const myView = ++viewToken;
-      const doSwap = () => {
-        const pre = new Image(); pre.decoding="async";
-        pre.onload = () => {
-          if (myView !== viewToken) return;
-          imgEl.src = pre.src;
-          requestAnimationFrame(()=>requestAnimationFrame(()=>{
-            if (myView !== viewToken) return;
-            imgEl.classList.add("visible"); refreshQueryText();
-          }));
-        };
-        pre.onerror = () => {
-          const cur = history[index]; if (cur) cur.broken = true;
-          dlog("IMG load failed. fromHistory:", fromHistory, "dir:", dir);
-          if (fromHistory) navigate(dir||+1); else { isFetching=false; fetchAndAppendNewImage(); }
-        };
-        pre.src = url;
-      };
-      if (!imgEl.getAttribute('src')){ if (query!==undefined) qEl.textContent=query||""; doSwap(); return; }
-      imgEl.classList.remove("visible");
-      const onEnd = () => { imgEl.removeEventListener("transitionend", onEnd);
-        if (myView !== viewToken) return; if (query!==undefined) qEl.textContent=query||""; doSwap(); };
-      imgEl.addEventListener("transitionend", onEnd, { once:true });
-      setTimeout(()=>{ if (myView===viewToken) onEnd(); }, 520);
-    }
-
-    function navigate(delta){
-      if (!history.length) return;
-      const step = delta>0?1:-1; let target = index + step;
-      if (target < 0) target = 0;
-      if (target > history.length-1){ if (step>0) fetchAndAppendNewImage(); return; }
-      let i = target; while (i>=0 && i<history.length && history[i]?.broken) i += step;
-      if (i<0 || i>=history.length){ if (step>0) fetchAndAppendNewImage(); return; }
-      index = i; const {url,query} = history[index]; dlog("Navigate to #", index, "query:", query);
-      transitionTo(url, query, { fromHistory:true, dir:step });
-    }
-
-    function withTimeout(promise, ms, label){
-      let t; return Promise.race([ promise,
-        new Promise((_,rej)=> t=setTimeout(()=>rej(new Error(`Timeout ${label||''} ${ms}ms`)), ms))
-      ]).finally(()=>clearTimeout(t));
-    }
-
-/* ===== NO CONFIG NEEDED (Wikimedia Commons) ===== */
-
-/* ... שאר העוזרים שלך נשארים ... */
-
-/* חיפוש תמונה לפי טקסט ב־Wikimedia Commons */
-async function fetchCommonsImageByQuery(query, token, attempts=2) {
-  const offset = Math.floor(Math.random()*10); // כדי לגוון תוצאות
-  const params = new URLSearchParams({
-    action: 'query',
-    format: 'json',
-    origin: '*',
-    generator: 'search',
-    gsrsearch: query,
-    gsrnamespace: '6',     // קבצי מדיה
-    gsrlimit: '40',
-    gsroffset: String(offset),
-    prop: 'imageinfo',
-    iiprop: 'url|mime',
-    iiurlwidth: '2000'     // נקבל thumburl מוכן עד 2000px
-  });
-  const url = 'https://commons.wikimedia.org/w/api.php?' + params.toString();
-
-  try {
-    dlog('Commons fetch:', query, '(offset', offset, ')');
-    const res = await withTimeout(fetch(url), 10000, 'commons');
-    if (token !== fetchToken) return null;
-    const data = await res.json();
-    const pages = data?.query?.pages;
-
-    let candidates = pages ? Object.values(pages)
-      .map(p => p?.imageinfo?.[0])
-      .filter(Boolean) : [];
-
-    // סינון קליל לפורמטים בעייתיים
-    candidates = candidates.filter(info =>
-      /^image\//.test(info.mime || '') ||
-      /\.(jpe?g|png|gif|webp)$/i.test(info.url || '')
-    );
-
-    if (!candidates.length) {
-      if (attempts > 0) return fetchCommonsImageByQuery(query, token, attempts-1);
-      return null;
-    }
-
-    const pick = candidates[Math.floor(Math.random()*candidates.length)];
-    return pick.thumburl || pick.url || null;
-  } catch (e) {
-    dlog('Commons fetch err:', e && (e.message || e));
-    if (attempts > 0) return fetchCommonsImageByQuery(query, token, attempts-1);
-    return null;
-  }
-}
-
-/* במקרה שאין תוצאות לשאילתה - קח קובץ רנדומלי לגמרי */
-async function fetchCommonsRandomImage(token, attempts=2) {
-  const params = new URLSearchParams({
-    action: 'query',
-    format: 'json',
-    origin: '*',
-    generator: 'random',
-    grnnamespace: '6',
-    grnlimit: '1',
-    prop: 'imageinfo',
-    iiprop: 'url|mime',
-    iiurlwidth: '2000'
-  });
-  const url = 'https://commons.wikimedia.org/w/api.php?' + params.toString();
-
-  try {
-    dlog('Commons random…');
-    const res = await withTimeout(fetch(url), 10000, 'commons-random');
-    if (token !== fetchToken) return null;
-    const data = await res.json();
-    const page = data?.query?.pages ? Object.values(data.query.pages)[0] : null;
-    const info = page?.imageinfo?.[0];
-    return info?.thumburl || info?.url || null;
-  } catch (e) {
-    dlog('Commons random err:', e && (e.message || e));
-    if (attempts > 0) return fetchCommonsRandomImage(token, attempts-1);
-    return null;
-  }
-}
-
-/* מחליף את Google ב־Commons */
-async function fetchAndAppendNewImage(){
-  if (isFetching){ dlog("Skip: already fetching"); return; }
+// מביא תמונה חדשה ודוחף להיסטוריה
+async function fetchAndAppendNewImage() {
+  if (isFetching) { dlog("Skip: already fetching"); return; }
   isFetching = true; const myToken = ++fetchToken;
-  try{
-    const builtQuery = await buildQueryByMode(); // רק לטקסט העליון
 
-    const got = await fetchPicsumRandom(myToken);
+  try {
+    const { url, w, h } = buildPicsumUrl();
     if (myToken !== fetchToken) return;
 
-    const imgUrl = got?.url;
-    const query  = got?.query || builtQuery || "";
+    // אם חזרת אחורה ואז קדימה – קוטם את הזנב
+    if (index < history.length - 1) history.length = index + 1;
 
-    if (imgUrl){
-      if (index < history.length-1) history.length = index + 1;
-      history.push({ url: imgUrl, query }); index = history.length - 1;
-      transitionTo(imgUrl, query, { fromHistory:false });
-    } else {
-      dlog("No results. Retrying…");
-      isFetching = false;
-      fetchAndAppendNewImage();
-    }
-  } catch(e){
+    history.push({ url, w, h });
+    index = history.length - 1;
+
+    transitionTo(url, { w, h });
+  } catch (e) {
     dlog("Fatal fetchAndAppend:", e?.message || e);
   } finally {
     isFetching = false;
   }
 }
 
+// ניווט בהיסטוריה
+function navigate(delta) {
+  if (!history.length) return;
+  const target = Math.min(Math.max(index + delta, 0), history.length - 1);
+  if (target === index) {
+    if (delta > 0) fetchAndAppendNewImage(); // בקשת קדימה מעבר לסוף => תביא חדש
+    return;
+  }
+  index = target;
+  const { url } = history[index];
+  dlog(`Navigate to #${index}`);
+  transitionTo(url);
+}
 
+// ----- Controls (אם קיימים) -----
+btnPrev && btnPrev.addEventListener("click", () => navigate(-1));
+btnNext && btnNext.addEventListener("click", () => navigate(+1));
 
-    async function buildQueryByMode(){
-  if (currentMode === MODE.WORD){
-        if (wordLang === WORD_LANG.HE){ const [a,b]=await getTwoIndependentHE(); return `${a} ${b}`; }
-        else { const [a,b]=await getTwoIndependentEN(); return `${a} ${b}`; }
-      } else if (currentMode === MODE.CUSTOM){
-        // המילה הרנדומלית לפני הביטוי שהמשתמש כתב
-        const randW = customLang === WORD_LANG.HE ? await getRandomWikiWordHE()
-                                                 : await getRandomWikiWordEN();
-        return `${randW} ${customPhrase}`;
-      } else { // NUMBER
-        return String(randomNumber());
-      }
-    }
+// ----- Keyboard -----
+document.addEventListener("keydown", (ev) => {
+  if (ev.repeat) return;
+  const k = ev.key.toLowerCase();
+  if (k === " ")      { ev.preventDefault(); fetchAndAppendNewImage(); }
+  else if (k === "arrowleft")  navigate(-1);
+  else if (k === "arrowright") navigate(+1);
+  else if (k === "l")  { debugVisible = !debugVisible; updateDebugVis(); }
+});
 
-    
+// ----- Init -----
+updateDebugVis();   // אם יש <pre id="debug">
+fetchAndAppendNewImage();
 
-    /* ===== Input overlay (I to open) ===== */
-    function openCustomInput(){
-      inputEl.classList.add('show');
-      inputEl.value = customPhrase || "";
-      inputEl.placeholder = "הקלד/י ביטוי… (Enter לאישור, Esc לביטול)";
-      inputEl.focus();
-      qEl.classList.remove('visible');
-    }
-    function closeCustomInput(){
-      inputEl.classList.remove('show');
-      inputEl.blur(); // שחרור פוקוס מהאינפוט
-      if (!document.body.hasAttribute('tabindex')) document.body.setAttribute('tabindex', '-1');
-      document.body.focus?.();
-    }
-
-    inputEl.addEventListener('keydown', async (ev)=>{
-      if (ev.key === 'Escape'){
-        ev.preventDefault(); ev.stopPropagation();
-        closeCustomInput();
-      } else if (ev.key === 'Enter'){
-        ev.preventDefault(); ev.stopPropagation();
-        const phrase = (inputEl.value || "").trim();
-
-        // סגור מיד כדי לשחרר פוקוס ולתת לחצים לעבוד
-        closeCustomInput();
-
-        if (!phrase) return;
-        customPhrase = phrase;
-        customLang = hasHebrew(phrase) ? WORD_LANG.HE : WORD_LANG.EN;
-
-        // אם עוברים למצב CUSTOM – זה יזניק חיפוש.
-        // אם כבר היינו ב־CUSTOM – נזניק חיפוש ידנית.
-        if (currentMode !== MODE.CUSTOM) {
-          setMode(MODE.CUSTOM);
-        } else {
-          fetchAndAppendNewImage();
-        }
-      }
-      // לא עוצרים מקשים אחרים – כדי לאפשר הקלדה רגילה
-    });
-
-    /* ===== Keyboard ===== */
-    document.addEventListener("keydown", (ev)=>{
-      if (ev.repeat) return;
-
-      // כשה־Input פתוח – לא מפעילים קיצורי דרך
-      if (inputEl.classList.contains('show')) return;
-
-      const k = ev.key?.toLowerCase?.();
-      if (k === " "){ ev.preventDefault(); fetchAndAppendNewImage(); }
-      else if (k === "arrowleft"){ navigate(-1); }
-      else if (k === "arrowright"){ navigate(+1); }
-      else if (k === "g"){ showQuery = !showQuery; refreshQueryText(); updateControlsUI(); }
-      else if (k === "w"){ setMode(MODE.WORD); }
-      else if (k === "n"){ setMode(MODE.NUMBER); }
-      else if (k === "e"){ if (currentMode === MODE.WORD){ wordLang = WORD_LANG.EN; fetchAndAppendNewImage(); } }
-      else if (k === "h"){ if (currentMode === MODE.WORD){ wordLang = WORD_LANG.HE; fetchAndAppendNewImage(); } }
-      else if (k === "l"){ debugVisible = !debugVisible; updateDebugVis(); }
-      else if (k === "i"){
-        ev.preventDefault();
-        ev.stopPropagation();
-        openCustomInput();
-      }
-    });
-
-    /* ===== init ===== */
-    updateControlsUI();
-    updateDebugVis();  // מתחיל מוסתר
-    fetchAndAppendNewImage();
   </script>
 </body>
 </html>
+
 
 
 
