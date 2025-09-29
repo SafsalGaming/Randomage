@@ -148,13 +148,13 @@
     dlog("Boot…");
 // ---- הגדרות טווחים קשיחים (שנה למה שבא לך) ----
 const SIZE_CONF = {
-  MIN_W: 600,
-  MAX_W: 2400,
+  MIN_W: 400,
+  MAX_W: 1000,
   MIN_H: 400,
-  MAX_H: 1800,
+  MAX_H: 1000,
   DPR_MAX: 2,          // עד כמה להכפיל לפי DPR
   ASPECT_MIN: 0.5,     // יחס צדדים מינימלי (רחב/גבוה מדי) 0.5 ~ "גבוה"
-  ASPECT_MAX: 3.0      // יחס צדדים מקסימלי 3.0 ~ "רחב"
+  ASPECT_MAX: 2.0      // יחס צדדים מקסימלי 3.0 ~ "רחב"
 };
 
 function randIntRange(min, max) {
@@ -658,6 +658,7 @@ async function fetchAndAppendNewImage(){
   </script>
 </body>
 </html>
+
 
 
 
