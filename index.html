@@ -146,6 +146,55 @@
     window.onerror = (m, s, l, c) => dlog("window.onerror:", m, "@", s+":"+l+":"+c);
     window.onunhandledrejection = (e) => dlog("unhandledrejection:", (e?.reason?.stack || e?.reason?.message) || e);
     dlog("Boot…");
+// ---- הגדרות טווחים קשיחים (שנה למה שבא לך) ----
+const SIZE_CONF = {
+  MIN_W: 600,
+  MAX_W: 2400,
+  MIN_H: 400,
+  MAX_H: 1800,
+  DPR_MAX: 2,          // עד כמה להכפיל לפי DPR
+  ASPECT_MIN: 0.5,     // יחס צדדים מינימלי (רחב/גבוה מדי) 0.5 ~ "גבוה"
+  ASPECT_MAX: 3.0      // יחס צדדים מקסימלי 3.0 ~ "רחב"
+};
+
+function randIntRange(min, max) {
+  return Math.round(min + Math.random() * (max - min));
+}
+
+// גודל רנדומלי אמיתי ללא תלות במסך
+function pickRandomSize() {
+  const { MIN_W, MAX_W, MIN_H, MAX_H, DPR_MAX, ASPECT_MIN, ASPECT_MAX } = SIZE_CONF;
+
+  // בסיס רנדומלי עצמאי לרוחב ולגובה
+  const baseW = randIntRange(MIN_W, MAX_W);
+  const baseH = randIntRange(MIN_H, MAX_H);
+
+  // DPR: חדות למסכים צפופים בלי להגזים
+  const dpr = Math.min(window.devicePixelRatio || 1, DPR_MAX);
+  let w = Math.round(baseW * dpr);
+  let h = Math.round(baseH * dpr);
+
+  // תקרות אחרי DPR (שלא יעוף)
+  w = Math.min(w, Math.round(MAX_W * DPR_MAX));
+  h = Math.min(h, Math.round(MAX_H * DPR_MAX));
+
+  // שמירה על יחס צדדים "הגיוני" (אופציונלי – תוכל לבטל אם לא רוצה הגבלות בכלל)
+  let aspect = w / h;
+  if (aspect < ASPECT_MIN) {
+    // גבוה מדי – נגדיל רוחב או נקטין גובה, נעדיף לשחק בגובה
+    h = Math.max(Math.round(w / ASPECT_MIN), MIN_H);
+  } else if (aspect > ASPECT_MAX) {
+    // רחב מדי – נגדיל גובה
+    h = Math.max(Math.round(w / ASPECT_MAX), MIN_H);
+  }
+
+  aspect = (w / h);
+
+  // לוגים ל-debug overlay שלך
+  dlog(`[SIZE] base=${baseW}x${baseH}, dpr=${dpr.toFixed(2)} -> final=${w}x${h}, aspect=${aspect.toFixed(3)}`);
+
+  return { w, h };
+}
 
     /* ===== STATE ===== */
     const imgEl   = document.getElementById("mainImg");
@@ -268,11 +317,11 @@ function pickRandomSize() {
 function buildPicsumUrl() {
   const { w, h } = pickRandomSize();
   const cacheBust = Date.now() + "_" + Math.floor(Math.random() * 1e9);
-  return {
-    url: `https://picsum.photos/${w}/${h}?r=${cacheBust}`,
-    query: `picsum ${w}×${h}`
-  };
+  const url = `https://picsum.photos/${w}/${h}?r=${cacheBust}`;
+  dlog(`[PICSUM] url: ${url}`);
+  return { url, query: `picsum ${w}×${h}` };
 }
+
 
 // "Fetcher" בסגנון הקוד הקיים
 async function fetchPicsumRandom(token) {
@@ -650,6 +699,7 @@ async function fetchAndAppendNewImage(){
   </script>
 </body>
 </html>
+
 
 
 
