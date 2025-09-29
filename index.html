@@ -219,29 +219,24 @@ const UNSPLASH_ACCESS_KEY = "OyP5c6t6jgtb7wrPLYjgX1umRAz8rAY5kuww7muP7x0"; // ל
     // FIX: רג׳קס נכון לזיהוי עברית
     const hasHebrew = (s) => /[\u0590-\u05FF]/.test(s);
 // גודל יעד חכם לפי המסך + קצת רנדומליות
+// גודל יעד חכם לפי המסך + קצת רנדומליות
 function pickRandomSize() {
   const vw = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);
   const vh = Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0);
-
-  // יחס מסך
   const ratio = vw / vh;
 
-  // טווחים גמישים שייצאו חדים אבל לא מפלצתיים
   let baseW = Math.round(vw * (0.7 + Math.random() * 0.6));  // 70%–130% מרוחב המסך
   let baseH = Math.round(baseW / ratio);
 
-  // קצת ערבוב כדי שלא יהיה תמיד לפי יחס מסך
   if (Math.random() < 0.35) {
     baseH = Math.round(vh * (0.7 + Math.random() * 0.6));
     baseW = Math.round(baseH * ratio);
   }
 
-  // DPI גבוהים: להכפיל לפי DPR עד תקרה
   const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
   let w = Math.min(Math.round(baseW * dpr), 4096);
   let h = Math.min(Math.round(baseH * dpr), 4096);
 
-  // אל תיפול על מספרים קטנים
   w = Math.max(w, 600);
   h = Math.max(h, 400);
 
@@ -252,28 +247,19 @@ function pickRandomSize() {
 function buildPicsumUrl() {
   const { w, h } = pickRandomSize();
   const cacheBust = Date.now() + "_" + Math.floor(Math.random() * 1e9);
-  // אפשר להוסיף פרמטרים כמו blur=1 או grayscale=1 אם תרצה
   return {
     url: `https://picsum.photos/${w}/${h}?r=${cacheBust}`,
-    query: `picsum ${w}×${h}` // רק לטקסט העליון אם תרצה להציג
+    query: `picsum ${w}×${h}`
   };
 }
 
 // "Fetcher" בסגנון הקוד הקיים
 async function fetchPicsumRandom(token) {
   const { url, query } = buildPicsumUrl();
-  // אין צור
+  // אין צורך בפניה ל-JSON, פשוט מחזירים את ה-URL
+  return { url, query };
+}
 
-    function extractValidWordsEN(t) {
-      return (t || "")
-        .split(/[\s\-_–—,.;:!?'"“”‘’()[\]{}\/]+/)
-        .filter(Boolean)
-        .map(s => s.trim())
-        .filter(s => /^[A-Za-z]+$/.test(s))
-        .filter(s => s.length >= 3)
-        .map(s => s.toLowerCase())
-        .filter(s => !BAD_WORDS.has(s));
-    }
 async function fetchUnsplashByQuery(query, token, attempts=2) {
   const url = new URL("https://api.unsplash.com/photos/random");
   url.searchParams.set("query", query);
@@ -645,5 +631,6 @@ async function fetchAndAppendNewImage(){
   </script>
 </body>
 </html>
+
 
 
